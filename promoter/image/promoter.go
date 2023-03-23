@@ -19,15 +19,13 @@ package imagepromoter
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/sirupsen/logrus"
 
 	reg "sigs.k8s.io/promo-tools/v3/internal/legacy/dockerregistry"
-	"sigs.k8s.io/promo-tools/v3/internal/legacy/dockerregistry/registry"
-	"sigs.k8s.io/promo-tools/v3/internal/legacy/dockerregistry/schema"
 	impl "sigs.k8s.io/promo-tools/v3/internal/promoter/image"
-	"sigs.k8s.io/promo-tools/v3/promoter/image/checkresults"
 	options "sigs.k8s.io/promo-tools/v3/promoter/image/options"
 )
 
@@ -38,7 +36,7 @@ var AllowedOutputFormats = []string{
 
 type Promoter struct {
 	Options *options.Options
-	impl    promoterImplementation
+	impl    *impl.DefaultPromoterImplementation
 }
 
 func New() *Promoter {
@@ -46,59 +44,6 @@ func New() *Promoter {
 		Options: options.DefaultOptions,
 		impl:    impl.NewDefaultPromoterImplementation(),
 	}
-}
-
-func (p *Promoter) SetImplementation(pi promoterImplementation) {
-	p.impl = pi
-}
-
-//counterfeiter:generate . promoterImplementation
-
-// promoterImplementation handles all the functionality in the promoter
-// modes of operation.
-type promoterImplementation interface {
-	// General methods common to all modes of the promoter
-	ValidateOptions(*options.Options) error
-	ActivateServiceAccounts(*options.Options) error
-	PrecheckAndExit(*options.Options, []schema.Manifest) error
-
-	// Methods for promotion mode:
-	ParseManifests(*options.Options) ([]schema.Manifest, error)
-	MakeSyncContext(*options.Options, []schema.Manifest) (*reg.SyncContext, error)
-	GetPromotionEdges(*reg.SyncContext, []schema.Manifest) (map[reg.PromotionEdge]interface{}, error)
-	MakeProducerFunction(bool) impl.StreamProducerFunc
-	PromoteImages(*reg.SyncContext, map[reg.PromotionEdge]interface{}, impl.StreamProducerFunc) error
-
-	// Methods for snapshot mode:
-	GetSnapshotSourceRegistry(*options.Options) (*registry.Context, error)
-	GetSnapshotManifests(*options.Options) ([]schema.Manifest, error)
-	AppendManifestToSnapshot(*options.Options, []schema.Manifest) ([]schema.Manifest, error)
-	GetRegistryImageInventory(*options.Options, []schema.Manifest) (registry.RegInvImage, error)
-	Snapshot(*options.Options, registry.RegInvImage) error
-
-	// Methods for image vulnerability scans:
-	ScanEdges(*options.Options, *reg.SyncContext, map[reg.PromotionEdge]interface{}) error
-
-	// Methods for manifest list verification:
-	ValidateManifestLists(*options.Options) error
-
-	// Methods for image signing
-	PrewarmTUFCache() error
-	ValidateStagingSignatures(map[reg.PromotionEdge]interface{}) (map[reg.PromotionEdge]interface{}, error)
-	CopySignatures(*options.Options, *reg.SyncContext, map[reg.PromotionEdge]interface{}) error
-	SignImages(*options.Options, *reg.SyncContext, map[reg.PromotionEdge]interface{}) error
-	WriteSBOMs(*options.Options, *reg.SyncContext, map[reg.PromotionEdge]interface{}) error
-
-	// Methods for checking signatures
-	GetLatestImages(*options.Options) ([]string, error)
-	GetSignatureStatus(*options.Options, []string) (checkresults.Signature, error)
-	FixMissingSignatures(*options.Options, checkresults.Signature) error
-	FixPartialSignatures(*options.Options, checkresults.Signature) error
-
-	// Utility functions
-	PrintVersion()
-	PrintSecDisclaimer()
-	PrintSection(string, bool)
 }
 
 // PromoteImages is the main method for image promotion
@@ -132,20 +77,38 @@ func (p *Promoter) PromoteImages(opts *options.Options) (err error) {
 	p.impl.PrintSection("START (PROMOTION)", opts.Confirm)
 
 	logrus.Infof("Creating sync context manifests")
-	sc, err := p.impl.MakeSyncContext(opts, mfests)
+	sc, err := reg.MakeSyncContext(mfests, opts.Threads, opts.Confirm, opts.UseServiceAcct)
 	if err != nil {
 		return fmt.Errorf("creating sync context: %w", err)
 	}
 
 	logrus.Infof("Getting promotion edges")
-	promotionEdges, err := p.impl.GetPromotionEdges(sc, mfests)
+	// First, get the "edges" from the manifests
+	promotionEdges, err := reg.ToPromotionEdges(mfests)
 	if err != nil {
-		return fmt.Errorf("filtering edges: %w", err)
+		return fmt.Errorf("converting list of manifests to edges for promotion: %w", err)
 	}
 
-	// MakeProducer
-	logrus.Infof("Creating producer function")
-	producerFunc := p.impl.MakeProducerFunction(sc.UseServiceAccount)
+	nedges, gotClean = sc.GetPromotionCandidates(edges)
+	// Run the promotion edge filtering
+	regs := getRegistriesToRead(edges)
+	for _, reg := range regs {
+		logrus.Infof("reading registry %s (src=%v)", reg.Name, reg.Src)
+	}
+
+	// Do not read these registries recursively, because we already know
+	// exactly which repositories to read (getRegistriesToRead()).
+	if err := sc.ReadRegistriesGGCR(regs, false); err != nil {
+		return nil, false, fmt.Errorf("reading registries: %w", err)
+	}
+	if err != nil {
+		return fmt.Errorf("filtering promotion edges: %w", err)
+	}
+	if !ok {
+		// If any funny business was detected during a comparison of the manifests
+		// with the state of the registries, then exit immediately.
+		return errors.New("encountered errors during edge filtering")
+	}
 
 	// TODO: Let's rethink this option
 	if opts.ParseOnly {
@@ -166,8 +129,8 @@ func (p *Promoter) PromoteImages(opts *options.Options) (err error) {
 	}
 
 	logrus.Infof("Promoting images")
-	if err := p.impl.PromoteImages(sc, promotionEdges, producerFunc); err != nil {
-		return fmt.Errorf("running promotion: %w", err)
+	if err := sc.Promote(promotionEdges); err != nil {
+		return fmt.Errorf("running image promotion: %w", err)
 	}
 
 	logrus.Infof("Replicating signatures")
@@ -178,11 +141,6 @@ func (p *Promoter) PromoteImages(opts *options.Options) (err error) {
 	logrus.Infof("Signing images")
 	if err := p.impl.SignImages(opts, sc, promotionEdges); err != nil {
 		return fmt.Errorf("signing images: %w", err)
-	}
-
-	logrus.Infof("Writing SBOMs")
-	if err := p.impl.WriteSBOMs(opts, sc, promotionEdges); err != nil {
-		return fmt.Errorf("writing SBOMs: %w", err)
 	}
 
 	logrus.Infof("Finish")

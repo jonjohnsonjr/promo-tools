@@ -306,14 +306,6 @@ func (di *DefaultPromoterImplementation) replicateSignatures(
 	return nil
 }
 
-// WriteSBOMs writes SBOMs to each of the newly promoted images and stores
-// them along the signatures in the registry
-func (di *DefaultPromoterImplementation) WriteSBOMs(
-	opts *options.Options, sc *reg.SyncContext, edges map[reg.PromotionEdge]interface{},
-) error {
-	return nil
-}
-
 // GetIdentityToken returns an identity token for the selected service account
 // in order for this function to work, an account has to be already logged. This
 // can be achieved using the

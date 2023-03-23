@@ -1486,10 +1486,7 @@ func (sc *SyncContext) ValidateEdge(edge *PromotionEdge) error {
 // MKPopulateRequestsForPromotionEdges takes in a map of PromotionEdges to promote
 // and a PromotionContext and returns a PopulateRequests which can generate
 // requests to be processed
-func MKPopulateRequestsForPromotionEdges(
-	toPromote map[PromotionEdge]interface{},
-	mkProducer PromotionContext,
-) PopulateRequests {
+func MKPopulateRequestsForPromotionEdges(toPromote map[PromotionEdge]interface{}) PopulateRequests {
 	return func(sc *SyncContext, reqs chan<- stream.ExternalRequest, wg *sync.WaitGroup) {
 		if len(toPromote) == 0 {
 			logrus.Info("Nothing to promote.")
@@ -1666,19 +1663,7 @@ func getRegistriesToRead(edges map[PromotionEdge]interface{}) []registry.Context
 
 // Promote performs container image promotion by realizing the intent in the
 // Manifest.
-func (sc *SyncContext) Promote(
-	edges map[PromotionEdge]interface{},
-	mkProducer func(
-		image.Registry,
-		image.Name,
-		registry.Context,
-		image.Name,
-		image.Digest,
-		image.Tag,
-		TagOp,
-	) stream.Producer,
-	customProcessRequest *ProcessRequest,
-) error {
+func (sc *SyncContext) Promote(edges map[PromotionEdge]interface{}) error {
 	if len(edges) == 0 {
 		logrus.Info("Nothing to promote.")
 		return nil
@@ -1705,13 +1690,9 @@ func (sc *SyncContext) Promote(
 	}
 
 	var (
-		populateRequests = MKPopulateRequestsForPromotionEdges(
-			edges,
-			mkProducer,
-		)
+		populateRequests = MKPopulateRequestsForPromotionEdges(edges)
 
-		processRequest     ProcessRequest
-		processRequestReal ProcessRequest = func(
+		processRequest ProcessRequest = func(
 			sc *SyncContext,
 			reqs chan stream.ExternalRequest,
 			requestResults chan<- RequestResult,
@@ -1777,21 +1758,77 @@ func (sc *SyncContext) Promote(
 		}
 	)
 
-	captured := make(CapturedRequests)
+	// Run requests.
+	MaxConcurrentRequests := 10
 
-	if sc.Confirm {
-		processRequest = processRequestReal
-	} else {
-		processRequestDryRun := MkRequestCapturer(&captured)
-		processRequest = processRequestDryRun
+	if sc.Threads > 0 {
+		MaxConcurrentRequests = sc.Threads
 	}
 
-	if customProcessRequest != nil {
-		processRequest = *customProcessRequest
-	}
+	mutex := &sync.Mutex{}
+	reqs := make(chan stream.ExternalRequest, MaxConcurrentRequests)
+	requestResults := make(chan RequestResult)
 
-	sc.PrintCapturedRequests(&captured)
-	return sc.ExecRequests(populateRequests, processRequest)
+	// We have to use a WaitGroup, because even though we know beforehand the
+	// number of workers, we don't know the number of jobs.
+	wg := new(sync.WaitGroup)
+
+	var err error
+
+	// Log any errors encountered.
+	go func() {
+		for reqRes := range requestResults {
+			if len(reqRes.Errors) > 0 {
+				(*mutex).Lock()
+				err = fmt.Errorf("encountered an error while executing requests")
+				sc.Logs.Errors = append(sc.Logs.Errors, reqRes.Errors...)
+				(*mutex).Unlock()
+
+				logrus.Errorf(
+					// TODO(log): Consider logging with fields
+					"request %v: error(s) encountered: %v",
+					reqRes.Context,
+					reqRes.Errors,
+				)
+			} else {
+				// TODO(log): Consider logging with fields
+				logrus.Infof("request %v: OK", reqRes.Context.RequestParams)
+			}
+
+			// Log the HTTP request to GCR.
+			reqcounter.Increment()
+
+			wg.Add(-1)
+		}
+	}()
+	for w := 0; w < MaxConcurrentRequests; w++ {
+		go processRequest(sc, reqs, requestResults, wg, mutex)
+	}
+	// This can't be a goroutine, because the semaphore could be 0 by the time
+	// wg.Wait() is called. So we need to block against the initial "seeding" of
+	// workloads into the reqs channel.
+	populateRequests(sc, reqs, wg)
+
+	// Wait for all workers to finish draining the jobs.
+	wg.Wait()
+	close(reqs)
+
+	// Close requestResults channel because no more new jobs are being created
+	// (it's OK to close a channel even if it has nonzero length). On the other
+	// hand, we cannot close the channel before we Wait() for the workers to
+	// finish, because we would end up closing it too soon, and a worker would
+	// end up trying to send a result to the already-closed channel.
+	//
+	// NOTE: This requestResults channel is only useful if we want a central
+	// place to process how each request happened (good for maybe debugging slow
+	// reqs? benchmarking?). If we just want to print something, for example,
+	// whenever there's an error, we could do away with this channel and just
+	// spit out to STDOUT wheneven we encounter an error, from whichever
+	// goroutine (no need to put the error into a channel for consumption from a
+	// single point).
+	close(requestResults)
+
+	return err
 }
 
 // PrintCapturedRequests pretty-prints all given PromotionRequests.
