@@ -18,18 +18,14 @@ package registry
 
 import (
 	"fmt"
-
-	"sigs.k8s.io/promo-tools/v3/internal/legacy/gcloud"
-	"sigs.k8s.io/promo-tools/v3/types/image"
 )
 
 // Context holds information about a registry, to be written in a
 // manifest file.
 type Context struct {
-	Name           image.Registry `yaml:"name,omitempty"`
-	ServiceAccount string         `yaml:"service-account,omitempty"`
-	Token          gcloud.Token   `yaml:"-"`
-	Src            bool           `yaml:"src,omitempty"`
+	Name           string `yaml:"name,omitempty"`
+	ServiceAccount string `yaml:"service-account,omitempty"`
+	Src            bool   `yaml:"src,omitempty"`
 }
 
 // GetSrcRegistry gets the source registry.

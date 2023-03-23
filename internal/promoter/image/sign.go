@@ -33,7 +33,6 @@ import (
 	gopts "google.golang.org/api/option"
 
 	reg "sigs.k8s.io/promo-tools/v3/internal/legacy/dockerregistry"
-	"sigs.k8s.io/promo-tools/v3/internal/legacy/gcloud"
 	options "sigs.k8s.io/promo-tools/v3/promoter/image/options"
 	"sigs.k8s.io/promo-tools/v3/promoter/image/ratelimit"
 	"sigs.k8s.io/promo-tools/v3/types/image"
@@ -175,7 +174,7 @@ func (di *DefaultPromoterImplementation) SignImages(
 	// We only sign the first image of each edge. If there are more
 	// than one destination registries for an image, we copy the
 	// signature to avoid varying valid signatures in each registry.
-	sortedEdges := map[image.Digest][]reg.PromotionEdge{}
+	sortedEdges := map[string][]reg.PromotionEdge{}
 	for edge := range edges {
 		// Skip signing the signature, sbom and attestation layers
 		if strings.HasSuffix(string(edge.DstImageTag.Tag), ".sig") ||
@@ -193,7 +192,7 @@ func (di *DefaultPromoterImplementation) SignImages(
 	t := throttler.New(opts.MaxSignatureOps, len(sortedEdges))
 	// Sign the required edges
 	for d := range sortedEdges {
-		go func(digest image.Digest) {
+		go func(digest string) {
 			t.Done(di.signAndReplicate(signOpts, sortedEdges[digest]))
 		}(d)
 		if t.Throttle() > 0 {
@@ -250,7 +249,7 @@ func (di *DefaultPromoterImplementation) signAndReplicate(signOpts *sign.Options
 
 // digestToSignatureTag takes a digest and infers the tag name where
 // its signature can be found
-func digestToSignatureTag(dg image.Digest) string {
+func digestToSignatureTag(dg string) string {
 	return strings.ReplaceAll(string(dg), "sha256:", "sha256-") + signatureTagSuffix
 }
 
@@ -269,36 +268,24 @@ func (di *DefaultPromoterImplementation) replicateSignatures(
 		return fmt.Errorf("parsing reference %q: %w", sourceRefStr, err)
 	}
 
-	dstRefs := []struct {
-		reference name.Reference
-		token     gcloud.Token
-	}{}
-
 	for i := range dsts {
-		ref, err := name.ParseReference(fmt.Sprintf(
+		dstRef, err := name.ParseReference(fmt.Sprintf(
 			"%s/%s:%s", dsts[i].DstRegistry.Name, dsts[i].DstImageTag.Name, sigTag,
 		))
 		if err != nil {
-			return fmt.Errorf("parsing signature destination referece: %w", err)
+			return fmt.Errorf("parsing signature destination reference: %w", err)
 		}
-		dstRefs = append(dstRefs, struct {
-			reference name.Reference
-			token     gcloud.Token
-		}{ref, dsts[i].DstRegistry.Token})
-	}
 
-	// Copy the signatures to the missing registries
-	for _, dstRef := range dstRefs {
-		logrus.WithField("src", srcRef.String()).Infof("replication > %s", dstRef.reference.String())
+		logrus.WithField("src", srcRef.String()).Infof("replication > %s", dstRef.String())
 		opts := []crane.Option{
 			crane.WithAuthFromKeychain(gcrane.Keychain),
 			crane.WithUserAgent(image.UserAgent),
 			crane.WithTransport(ratelimit.Limiter),
 		}
-		if err := crane.Copy(srcRef.String(), dstRef.reference.String(), opts...); err != nil {
+		if err := crane.Copy(srcRef.String(), dstRef.String(), opts...); err != nil {
 			return fmt.Errorf(
 				"copying signature %s to %s: %w",
-				srcRef.String(), dstRef.reference.String(), err,
+				srcRef.String(), dstRef.String(), err,
 			)
 		}
 	}

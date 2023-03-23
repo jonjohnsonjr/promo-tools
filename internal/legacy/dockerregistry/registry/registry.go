@@ -31,7 +31,7 @@ import (
 // sense, and holds all the information relating to a particular image that we
 // care about.
 type Image struct {
-	Name image.Name `yaml:"name"`
+	Name string     `yaml:"name"`
 	Dmap DigestTags `yaml:"dmap,omitempty"`
 }
 
@@ -46,19 +46,19 @@ type Images []Image
 //
 // The image.Name is actually a path name, because it can be "foo/bar/baz", where
 // the image name is the string after the last slash (in this case, "baz").
-type RegInvImage map[image.Name]DigestTags
+type RegInvImage map[string]DigestTags
 
 // DigestTags is a map where each digest is associated with a TagSlice. It is
 // associated with a TagSlice because an image digest can have more than 1 tag
 // pointing to it, even within the same image name's namespace (tags are
 // namespaced by the image name).
-type DigestTags map[image.Digest]TagSlice
+type DigestTags map[string]TagSlice
 
 // TagSlice is a slice of Tags.
-type TagSlice []image.Tag
+type TagSlice []string
 
 // TagSet is a set of Tags.
-type TagSet map[image.Tag]interface{}
+type TagSet map[string]interface{}
 
 // ToYAML displays a RegInvImage as YAML, but with the map items sorted
 // alphabetically.

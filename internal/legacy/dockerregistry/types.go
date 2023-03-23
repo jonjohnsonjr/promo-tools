@@ -56,8 +56,8 @@ type ImageSizeError struct {
 // ImageVulnError contains ImageVulnCheck information on images that contain a
 // vulnerability with a severity level at or above the defined threshold.
 type ImageVulnError struct {
-	ImageName      image.Name
-	Digest         image.Digest
+	ImageName      string
+	Digest         string
 	OccurrenceName string
 	Vulnerability  *grafeaspb.VulnerabilityOccurrence
 }
@@ -84,7 +84,7 @@ type SyncContext struct {
 	Confirm           bool
 	UseServiceAccount bool
 	Inv               MasterInventory
-	InvIgnore         []image.Name
+	InvIgnore         []string
 	RegistryContexts  []registry.Context
 	SrcRegistry       *registry.Context
 	Tokens            map[RootRepo]gcloud.Token
@@ -136,7 +136,7 @@ type PromotionEdge struct {
 	SrcRegistry registry.Context
 	SrcImageTag ImageTag
 
-	Digest image.Digest
+	Digest string
 
 	DstRegistry registry.Context
 	DstImageTag ImageTag
@@ -150,7 +150,7 @@ type VertexProperty struct {
 	PqinExists      bool
 	DigestExists    bool
 	PqinDigestMatch bool
-	BadDigest       image.Digest
+	BadDigest       string
 	OtherTags       registry.TagSlice
 }
 
@@ -159,12 +159,12 @@ type VertexProperty struct {
 type RootRepo string
 
 // MasterInventory stores multiple RegInvImage elements, keyed by RegistryName.
-type MasterInventory map[image.Registry]registry.RegInvImage
+type MasterInventory map[string]registry.RegInvImage
 
 // ImageTag is a combination of the image.Name and Tag.
 type ImageTag struct {
-	Name image.Name
-	Tag  image.Tag
+	Name string
+	Tag  string
 }
 
 // TagOp is an enum that describes the various types of tag-modifying
@@ -190,14 +190,14 @@ const (
 // promotion (or demotion!) (involving any TagOp).
 type PromotionRequest struct {
 	TagOp          TagOp
-	RegistrySrc    image.Registry
-	RegistryDest   image.Registry
+	RegistrySrc    string
+	RegistryDest   string
 	ServiceAccount string
-	ImageNameSrc   image.Name
-	ImageNameDest  image.Name
-	Digest         image.Digest
-	DigestOld      image.Digest // Only for tag moves.
-	Tag            image.Tag
+	ImageNameSrc   string
+	ImageNameDest  string
+	Digest         string
+	DigestOld      string // Only for tag moves.
+	Tag            string
 }
 
 // RegistryImagePath is the registry name and image name, without the tag. E.g.
@@ -208,20 +208,20 @@ type RegistryImagePath string
 // from GCR, in the function ReadGCRManifestLists.
 type GCRManifestListContext struct {
 	RegistryContext registry.Context
-	ImageName       image.Name
-	Tag             image.Tag
-	Digest          image.Digest
+	ImageName       string
+	Tag             string
+	Digest          string
 }
 
 // DigestMediaType holds media information about a Digest.
-type DigestMediaType map[image.Digest]cr.MediaType
+type DigestMediaType map[string]cr.MediaType
 
 // DigestImageSize holds information about the size of an image in bytes.
-type DigestImageSize map[image.Digest]int
+type DigestImageSize map[string]int
 
 // ParentDigest holds a map of the digests of children to parent digests. It is
 // a reverse mapping of ManifestLists, which point to all the child manifests.
-type ParentDigest map[image.Digest]image.Digest
+type ParentDigest map[string]string
 
 // PopulateRequests is a function that can generate requests used to fetch
 // information about a Docker Registry, or to promote images. It basically
@@ -279,8 +279,8 @@ type GCRPubSubPayload struct {
 	Path string
 
 	// Image digest, if any.
-	Digest image.Digest
+	Digest string
 
 	// Tag, if any.
-	Tag image.Tag
+	Tag string
 }

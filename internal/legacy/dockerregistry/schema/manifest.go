@@ -28,7 +28,6 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"sigs.k8s.io/promo-tools/v3/internal/legacy/dockerregistry/registry"
-	"sigs.k8s.io/promo-tools/v3/types/image"
 	"sigs.k8s.io/release-utils/command"
 )
 
@@ -115,7 +114,7 @@ func (m Manifest) Validate() error {
 func validateRequiredComponents(m Manifest) error {
 	// TODO: Should we return []error here instead?
 	errs := make([]string, 0)
-	srcRegistryName := image.Registry("")
+	srcRegistryName := ""
 
 	if len(m.Registries) > 0 {
 		if m.srcRegistryCount() > 1 {
@@ -175,14 +174,14 @@ func (m Manifest) srcRegistryCount() int {
 	return count
 }
 
-func (m Manifest) srcRegistryName() image.Registry {
+func (m Manifest) srcRegistryName() string {
 	for _, registry := range m.Registries {
 		if registry.Src {
 			return registry.Name
 		}
 	}
 
-	return image.Registry("")
+	return ""
 }
 
 func validateImages(images []registry.Image) error {
@@ -203,7 +202,7 @@ func validateImages(images []registry.Image) error {
 }
 
 // ValidateDigest validates the digest.
-func ValidateDigest(digest image.Digest) error {
+func ValidateDigest(digest string) error {
 	validDigest := regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 	if !validDigest.Match([]byte(digest)) {
 		return fmt.Errorf("invalid digest: %v", digest)
@@ -213,7 +212,7 @@ func ValidateDigest(digest image.Digest) error {
 }
 
 // ValidateTag validates the tag.
-func ValidateTag(tag image.Tag) error {
+func ValidateTag(tag string) error {
 	validTag := regexp.MustCompile(`^\w[\w.-]{0,127}$`)
 	if !validTag.Match([]byte(tag)) {
 		return fmt.Errorf("invalid tag: %v", tag)

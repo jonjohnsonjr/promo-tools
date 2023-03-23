@@ -27,7 +27,6 @@ import (
 	"sigs.k8s.io/promo-tools/v3/internal/legacy/dockerregistry/registry"
 	"sigs.k8s.io/promo-tools/v3/internal/legacy/dockerregistry/schema"
 	options "sigs.k8s.io/promo-tools/v3/promoter/image/options"
-	"sigs.k8s.io/promo-tools/v3/types/image"
 )
 
 // Run a snapshot
@@ -63,13 +62,11 @@ func (di *DefaultPromoterImplementation) GetSnapshotSourceRegistry(
 	// ManifestBasedSnapshotOf will be the Name property
 	// of the source registry
 	if opts.Snapshot != "" {
-		srcRegistry.Name = image.Registry(opts.Snapshot)
+		srcRegistry.Name = opts.Snapshot
 	} else if opts.ManifestBasedSnapshotOf == "" {
-		srcRegistry.Name = image.Registry(opts.ManifestBasedSnapshotOf)
+		srcRegistry.Name = opts.ManifestBasedSnapshotOf
 	} else {
-		return nil, errors.New(
-			"when snapshotting, Snapshot or ManifestBasedSnapshotOf have to be set",
-		)
+		return nil, errors.New("when snapshotting, Snapshot or ManifestBasedSnapshotOf have to be set")
 	}
 
 	return srcRegistry, nil
@@ -148,18 +145,6 @@ func (di *DefaultPromoterImplementation) GetRegistryImageInventory(
 			opts.ManifestBasedSnapshotOf,
 		)
 
-		if opts.MinimalSnapshot {
-			if err := sc.ReadRegistriesGGCR(
-				[]registry.Context{*srcRegistry},
-				true,
-			); err != nil {
-				return nil, fmt.Errorf("reading registry for minimal snapshot: %w", err)
-			}
-
-			sc.ReadGCRManifestLists(reg.MkReadManifestListCmdReal)
-			rii = sc.RemoveChildDigestEntries(rii)
-		}
-
 		return rii, nil
 	}
 
@@ -174,10 +159,5 @@ func (di *DefaultPromoterImplementation) GetRegistryImageInventory(
 		rii = reg.FilterByTag(rii, opts.SnapshotTag)
 	}
 
-	if opts.MinimalSnapshot {
-		logrus.Info("removing tagless child digests of manifest lists")
-		sc.ReadGCRManifestLists(reg.MkReadManifestListCmdReal)
-		rii = sc.RemoveChildDigestEntries(rii)
-	}
 	return rii, nil
 }

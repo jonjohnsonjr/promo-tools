@@ -18,7 +18,6 @@ package registry
 
 import (
 	"sigs.k8s.io/promo-tools/v3/internal/legacy/container"
-	"sigs.k8s.io/promo-tools/v3/types/image"
 )
 
 // Various set manipulation operations. Some set operations are missing,
@@ -39,7 +38,7 @@ func toRegistryInventory(a container.Set) RegInvImage {
 	for k, v := range a {
 		// TODO: Why are we not checking errors here?
 		//nolint:errcheck
-		b[k.(image.Name)] = v.(DigestTags)
+		b[k.(string)] = v.(DigestTags)
 	}
 
 	return b
@@ -116,7 +115,7 @@ func (a TagSet) ToSet() container.Set {
 func setToTagSet(a container.Set) TagSet {
 	b := make(TagSet)
 	for k := range a {
-		b[k.(image.Tag)] = nil
+		b[k.(string)] = nil
 	}
 
 	return b
