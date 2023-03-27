@@ -102,9 +102,7 @@ func (di *DefaultPromoterImplementation) ActivateServiceAccounts(opts *options.O
 
 // PrecheckAndExit run simple prechecks to exit before promotions
 // or security scans
-func (di *DefaultPromoterImplementation) PrecheckAndExit(
-	opts *options.Options, mfests []schema.Manifest,
-) error {
+func (di *DefaultPromoterImplementation) PrecheckAndExit(opts *options.Options, mfests []schema.Manifest) error {
 	// Make the sync context tu run the prechecks:
 	sc, err := di.MakeSyncContext(opts, mfests)
 	if err != nil {

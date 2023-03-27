@@ -51,9 +51,7 @@ func (di *DefaultPromoterImplementation) ParseManifests(opts *options.Options) (
 
 // MakeSyncContext takes a slice of manifests and creates a sync context
 // object based on them and the promoter options
-func (di DefaultPromoterImplementation) MakeSyncContext(
-	opts *options.Options, mfests []schema.Manifest,
-) (*reg.SyncContext, error) {
+func (di DefaultPromoterImplementation) MakeSyncContext(opts *options.Options, mfests []schema.Manifest) (*reg.SyncContext, error) {
 	sc, err := reg.MakeSyncContext(
 		mfests, opts.Threads, opts.Confirm, opts.UseServiceAcct,
 	)
@@ -66,9 +64,7 @@ func (di DefaultPromoterImplementation) MakeSyncContext(
 // GetPromotionEdges checks the manifests and determines from
 // them the promotion edges, ie the images that need to be
 // promoted.
-func (di *DefaultPromoterImplementation) GetPromotionEdges(
-	sc *reg.SyncContext, mfests []schema.Manifest,
-) (promotionEdges map[reg.PromotionEdge]interface{}, err error) {
+func (di *DefaultPromoterImplementation) GetPromotionEdges(sc *reg.SyncContext, mfests []schema.Manifest) (promotionEdges map[reg.PromotionEdge]interface{}, err error) {
 	// First, get the "edges" from the manifests
 	promotionEdges, err = reg.ToPromotionEdges(mfests)
 	if err != nil {
